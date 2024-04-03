@@ -176,6 +176,7 @@ class FasterWhisperPipeline(Pipeline):
         if isinstance(audio, str):
             audio = load_audio(audio)
 
+        language_probability = 'fixed'
         def data(audio, segments):
             for seg in segments:
                 f1 = int(seg['start'] * SAMPLE_RATE)
@@ -191,7 +192,8 @@ class FasterWhisperPipeline(Pipeline):
             offset=self._vad_params["vad_offset"],
         )
         if self.tokenizer is None:
-            language = language or self.detect_language(audio)
+            if language is None:
+                language, language_probability = self.detect_language(audio)
             task = task or "transcribe"
             self.tokenizer = faster_whisper.tokenizer.Tokenizer(self.model.hf_tokenizer,
                                                                 self.model.model.is_multilingual, task=task,
@@ -239,12 +241,12 @@ class FasterWhisperPipeline(Pipeline):
         if self.suppress_numerals:
             self.options = self.options._replace(suppress_tokens=previous_suppress_tokens)
 
-        return {"segments": segments, "language": language}
+        return {"segments": segments, "language": language, "language_probability": language_probability}
 
 
     def detect_language(self, audio: np.ndarray):
-        if audio.shape[0] < N_SAMPLES:
-            print("Warning: audio is shorter than 30s, language detection may be inaccurate.")
+        # if audio.shape[0] < N_SAMPLES:
+        #     print("Warning: audio is shorter than 30s, language detection may be inaccurate.")
         model_n_mels = self.model.feat_kwargs.get("feature_size")
         segment = log_mel_spectrogram(audio[: N_SAMPLES],
                                       n_mels=model_n_mels if model_n_mels is not None else 80,
@@ -253,8 +255,7 @@ class FasterWhisperPipeline(Pipeline):
         results = self.model.model.detect_language(encoder_output)
         language_token, language_probability = results[0][0]
         language = language_token[2:-2]
-        print(f"Detected language: {language} ({language_probability:.2f}) in first 30s of audio...")
-        return language
+        return language, language_probability
 
 def load_model(whisper_arch,
                device,
